@@ -4,7 +4,7 @@ Service de protection de licences applicatives pour environnements POS (Point of
 
 ## Description
 
-![Texte alternatif](protectlic.svg)
+![Texte alternatif](docs/protectlic.svg)
 
 
 License Secret Agent est un service système sécurisé qui gère le secret de déchiffrement des licences applicatives. Il garantit :
