@@ -1,0 +1,32 @@
+[Unit]
+Description=License Secret Agent
+Documentation=https://github.com/your-org/license-secret-agent
+After=network.target
+Wants=network.target
+
+[Service]
+Type=notify
+User=license-agent
+Group=license-agent
+ExecStart=/usr/bin/license-agent
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+# Sécurité
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/license-agent /var/log/license-agent
+CapabilityBoundingSet=CAP_SYS_ADMIN
+AmbientCapabilities=CAP_SYS_ADMIN
+
+# Limites ressources
+LimitNOFILE=65536
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
