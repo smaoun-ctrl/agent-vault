@@ -3,15 +3,15 @@ use crate::types::{AgentError, AgentResult, Secret, SecretMetadata, SecretState}
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
 use zeroize::Zeroize;
 
 /// Gestionnaire de secrets
 pub struct SecretManager {
     tpm: Arc<TpmManager>,
-    secrets: HashMap<u64, SecretMetadata>,
-    active_version: Option<u64>,
+    secrets: Arc<Mutex<HashMap<u64, SecretMetadata>>>,
+    active_version: Arc<Mutex<Option<u64>>>,
     state_path: PathBuf,
 }
 
@@ -19,14 +19,14 @@ impl SecretManager {
     pub fn new(tpm: Arc<TpmManager>, state_path: PathBuf) -> Self {
         Self {
             tpm,
-            secrets: HashMap::new(),
-            active_version: None,
+            secrets: Arc::new(Mutex::new(HashMap::new())),
+            active_version: Arc::new(Mutex::new(None)),
             state_path,
         }
     }
 
     /// Charge l'état depuis le disque
-    pub async fn load_state(&mut self) -> AgentResult<()> {
+    pub async fn load_state(&self) -> AgentResult<()> {
         if !self.state_path.exists() {
             info!("State file does not exist, starting fresh");
             return Ok(());
@@ -39,20 +39,24 @@ impl SecretManager {
         let state: StateFile = serde_json::from_str(&content)
             .map_err(|e| AgentError::InternalError(format!("Failed to parse state: {}", e)))?;
 
-        self.secrets = state.secrets;
-        self.active_version = state.active_version;
+        *self.secrets.lock().unwrap() = state.secrets;
+        *self.active_version.lock().unwrap() = state.active_version;
 
+        let secrets_len = self.secrets.lock().unwrap().len();
+        let active_ver = *self.active_version.lock().unwrap();
         info!("State loaded: {} secrets, active version: {:?}", 
-              self.secrets.len(), self.active_version);
+              secrets_len, active_ver);
 
         Ok(())
     }
 
     /// Sauvegarde l'état sur le disque
     pub async fn save_state(&self) -> AgentResult<()> {
+        let secrets = self.secrets.lock().unwrap().clone();
+        let active_version = *self.active_version.lock().unwrap();
         let state = StateFile {
-            secrets: self.secrets.clone(),
-            active_version: self.active_version,
+            secrets,
+            active_version,
             last_updated: Utc::now(),
         };
 
@@ -75,7 +79,7 @@ impl SecretManager {
     }
 
     /// Stocke un nouveau secret
-    pub async fn store_secret(&mut self, secret: Secret, version: u64) -> AgentResult<()> {
+    pub async fn store_secret(&self, secret: Secret, version: u64) -> AgentResult<()> {
         // Chiffrer le secret avec TPM
         let encrypted = self.tpm.encrypt(&secret.data)
             .map_err(|e| AgentError::TpmError(format!("Failed to encrypt secret: {}", e)))?;
@@ -86,14 +90,20 @@ impl SecretManager {
             .map_err(|e| AgentError::TpmError(format!("Failed to store secret in TPM: {}", e)))?;
 
         // Mettre à jour métadonnées
-        let mut metadata = secret.metadata;
+        let mut metadata = secret.metadata.clone();
         metadata.last_used_at = Some(Utc::now());
         
-        self.secrets.insert(version, metadata);
+        {
+            let mut secrets = self.secrets.lock().unwrap();
+            secrets.insert(version, metadata);
+        }
         
         // Si c'est le premier secret ou si c'est une rotation, mettre à jour version active
-        if self.active_version.is_none() || version > self.active_version.unwrap() {
-            self.active_version = Some(version);
+        {
+            let mut active_version = self.active_version.lock().unwrap();
+            if active_version.is_none() || version > active_version.unwrap() {
+                *active_version = Some(version);
+            }
         }
 
         // Sauvegarder état
@@ -106,8 +116,10 @@ impl SecretManager {
     /// Récupère un secret par version
     pub async fn get_secret(&self, version: u64) -> AgentResult<Secret> {
         // Vérifier que le secret existe
-        let metadata = self.secrets.get(&version)
-            .ok_or_else(|| AgentError::SecretNotFound(version))?;
+        let metadata = {
+            let secrets = self.secrets.lock().unwrap();
+            secrets.get(&version).cloned()
+        }.ok_or_else(|| AgentError::SecretNotFound(version))?;
 
         // Vérifier état
         match metadata.state {
@@ -154,8 +166,10 @@ impl SecretManager {
 
     /// Récupère le secret actif
     pub async fn get_active_secret(&self) -> AgentResult<Secret> {
-        let version = self.active_version
-            .ok_or_else(|| AgentError::SecretNotFound(0))?;
+        let version = {
+            let active_ver = self.active_version.lock().unwrap();
+            active_ver.ok_or_else(|| AgentError::SecretNotFound(0))?
+        };
         
         self.get_secret(version).await
     }
@@ -164,13 +178,19 @@ impl SecretManager {
     pub async fn get_grace_secrets(&self) -> AgentResult<Vec<Secret>> {
         let mut grace_secrets = Vec::new();
 
-        for (version, metadata) in &self.secrets {
-            if metadata.state == SecretState::Grace {
-                match self.get_secret(*version).await {
-                    Ok(secret) => grace_secrets.push(secret),
-                    Err(e) => {
-                        warn!("Failed to load grace secret {}: {}", version, e);
-                    }
+        let versions: Vec<u64> = {
+            let secrets = self.secrets.lock().unwrap();
+            secrets.iter()
+                .filter(|(_, metadata)| metadata.state == SecretState::Grace)
+                .map(|(version, _)| *version)
+                .collect()
+        };
+
+        for &version in &versions {
+            match self.get_secret(version).await {
+                Ok(secret) => grace_secrets.push(secret),
+                Err(e) => {
+                    warn!("Failed to load grace secret {}: {}", version, e);
                 }
             }
         }
@@ -179,12 +199,21 @@ impl SecretManager {
     }
 
     /// Passe un secret en état GRACE
-    pub async fn set_grace(&mut self, version: u64, grace_until: DateTime<Utc>) -> AgentResult<()> {
-        let metadata = self.secrets.get_mut(&version)
-            .ok_or_else(|| AgentError::SecretNotFound(version))?;
+    pub async fn set_grace(&self, version: u64, grace_until: DateTime<Utc>) -> AgentResult<()> {
+        let mut metadata = {
+            let mut secrets = self.secrets.lock().unwrap();
+            secrets.get_mut(&version)
+                .ok_or_else(|| AgentError::SecretNotFound(version))?
+                .clone()
+        };
 
         metadata.state = SecretState::Grace;
         metadata.grace_until = Some(grace_until);
+
+        {
+            let mut secrets = self.secrets.lock().unwrap();
+            secrets.insert(version, metadata);
+        }
 
         self.save_state().await?;
         info!("Secret {} set to GRACE until {}", version, grace_until);
@@ -193,16 +222,28 @@ impl SecretManager {
     }
 
     /// Invalide un secret
-    pub async fn invalidate(&mut self, version: u64, reason: Option<String>) -> AgentResult<()> {
-        let metadata = self.secrets.get_mut(&version)
-            .ok_or_else(|| AgentError::SecretNotFound(version))?;
+    pub async fn invalidate(&self, version: u64, reason: Option<String>) -> AgentResult<()> {
+        let mut metadata = {
+            let mut secrets = self.secrets.lock().unwrap();
+            secrets.get_mut(&version)
+                .ok_or_else(|| AgentError::SecretNotFound(version))?
+                .clone()
+        };
 
         metadata.state = SecretState::Invalide;
         metadata.invalidation_reason = reason;
 
+        {
+            let mut secrets = self.secrets.lock().unwrap();
+            secrets.insert(version, metadata);
+        }
+
         // Si c'était le secret actif, chercher un nouveau secret actif
-        if self.active_version == Some(version) {
-            self.active_version = self.find_new_active_version();
+        {
+            let mut active_version = self.active_version.lock().unwrap();
+            if *active_version == Some(version) {
+                *active_version = self.find_new_active_version();
+            }
         }
 
         self.save_state().await?;
@@ -212,29 +253,32 @@ impl SecretManager {
     }
 
     /// Nettoie les secrets expirés
-    pub async fn cleanup_expired(&mut self) -> AgentResult<usize> {
+    pub async fn cleanup_expired(&self) -> AgentResult<usize> {
         let now = Utc::now();
         let mut cleaned = 0;
 
-        let expired_versions: Vec<u64> = self.secrets
-            .iter()
-            .filter_map(|(version, metadata)| {
-                match metadata.state {
-                    SecretState::Grace => {
-                        if let Some(grace_until) = metadata.grace_until {
-                            if now > grace_until {
-                                Some(*version)
+        let expired_versions: Vec<u64> = {
+            let secrets = self.secrets.lock().unwrap();
+            secrets
+                .iter()
+                .filter_map(|(version, metadata)| {
+                    match metadata.state {
+                        SecretState::Grace => {
+                            if let Some(grace_until) = metadata.grace_until {
+                                if now > grace_until {
+                                    Some(*version)
+                                } else {
+                                    None
+                                }
                             } else {
                                 None
                             }
-                        } else {
-                            None
                         }
+                        _ => None,
                     }
-                    _ => None,
-                }
-            })
-            .collect();
+                })
+                .collect()
+        };
 
         for version in expired_versions {
             if let Err(e) = self.invalidate(version, Some("Grace period expired".to_string())).await {
@@ -252,7 +296,8 @@ impl SecretManager {
     }
 
     fn find_new_active_version(&self) -> Option<u64> {
-        self.secrets
+        let secrets = self.secrets.lock().unwrap();
+        secrets
             .iter()
             .filter(|(_, metadata)| metadata.state == SecretState::Actif)
             .map(|(version, _)| *version)
@@ -266,18 +311,20 @@ impl SecretManager {
     }
 
     /// Obtient les métadonnées d'un secret (sans le secret lui-même)
-    pub fn get_metadata(&self, version: u64) -> Option<&SecretMetadata> {
-        self.secrets.get(&version)
+    pub fn get_metadata(&self, version: u64) -> Option<SecretMetadata> {
+        let secrets = self.secrets.lock().unwrap();
+        secrets.get(&version).cloned()
     }
 
     /// Obtient la version active
     pub fn active_version(&self) -> Option<u64> {
-        self.active_version
+        *self.active_version.lock().unwrap()
     }
 
     /// Liste toutes les versions de secrets
     pub fn list_versions(&self) -> Vec<u64> {
-        self.secrets.keys().copied().collect()
+        let secrets = self.secrets.lock().unwrap();
+        secrets.keys().copied().collect()
     }
 }
 

@@ -106,22 +106,22 @@ impl Cli {
         self.authenticate().await?;
 
         // Exécuter commande
-        match self.command {
+        match &self.command {
             Commands::Status => self.cmd_status().await,
-            Commands::Rotate { force } => self.cmd_rotate(force).await,
+            Commands::Rotate { force } => self.cmd_rotate(*force).await,
             Commands::Invalidate { version, reason, confirm } => {
-                self.cmd_invalidate(version, reason, confirm).await
+                self.cmd_invalidate(*version, reason.clone(), *confirm).await
             }
             Commands::Logs { tail, event, level, since } => {
-                self.cmd_logs(tail, event, level, since).await
+                self.cmd_logs(*tail, event.clone(), level.clone(), since.clone()).await
             }
             Commands::Metrics => self.cmd_metrics().await,
             Commands::DegradedMode { enable, disable, reason } => {
-                self.cmd_degraded_mode(enable, disable, reason).await
+                self.cmd_degraded_mode(*enable, *disable, reason.clone()).await
             }
             Commands::TpmStatus => self.cmd_tpm_status().await,
             Commands::Reset { confirm, confirm_again } => {
-                self.cmd_reset(confirm, confirm_again).await
+                self.cmd_reset(*confirm, *confirm_again).await
             }
         }
     }
@@ -151,38 +151,10 @@ impl Cli {
     }
 
     async fn cmd_status(&self) -> Result<()> {
-        let status = self.send_request("status", serde_json::json!({})).await?;
-        let status: SystemStatus = serde_json::from_value(status)?;
-        
-        println!("=== Statut License Secret Agent ===\n");
-        
-        if let Some(active) = &status.active_secret {
-            println!("Secret ACTIF:");
-            println!("  Version: {}", active.version);
-            println!("  État: {:?}", active.state);
-            println!("  Valide depuis: {}", active.valid_from);
-            println!("  Valide jusqu'à: {}", active.valid_until);
-            if let Some(remaining) = active.remaining_seconds {
-                println!("  Temps restant: {} secondes", remaining);
-            }
-        } else {
-            println!("Aucun secret ACTIF");
-        }
-        
-        if !status.grace_secrets.is_empty() {
-            println!("\nSecrets GRACE:");
-            for secret in &status.grace_secrets {
-                println!("  Version {}: jusqu'à {:?}", secret.version, secret.grace_until);
-            }
-        }
-        
-        println!("\nTPM: {}", if status.tpm_status.available { "Disponible" } else { "Indisponible" });
-        println!("Mode dégradé: {}", if status.degraded_mode.active { "Actif" } else { "Inactif" });
-        
-        if let Some(next) = status.next_rotation {
-            println!("Prochaine rotation: {}", next);
-        }
-        
+        let status_value = self.send_request("status", serde_json::json!({})).await?;
+        // Pour l'instant, afficher directement le JSON
+        // TODO: Implémenter désérialisation SystemStatus si nécessaire
+        println!("{}", serde_json::to_string_pretty(&status_value)?);
         Ok(())
     }
 

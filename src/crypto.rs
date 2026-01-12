@@ -83,8 +83,7 @@ impl CryptoManager {
         hasher.update(data);
         let hash = hasher.finalize();
         
-        let mut rng = OsRng;
-        let padding = Pss::new_with_salt::<Sha256>(&mut rng);
+        let padding = Pss::new_with_salt::<Sha256>(32); // 32 bytes salt
         
         self.private_key
             .sign(padding, &hash)
@@ -100,8 +99,7 @@ impl CryptoManager {
         hasher.update(data);
         let hash = hasher.finalize();
         
-        let mut rng = OsRng;
-        let padding = Pss::new_with_salt::<Sha256>(&mut rng);
+        let padding = Pss::new_with_salt::<Sha256>(32); // 32 bytes salt
         
         match self.public_key.verify(padding, &hash, signature) {
             Ok(_) => Ok(true),
@@ -125,7 +123,9 @@ impl CryptoManager {
     pub fn export_private_key_pem(&self) -> anyhow::Result<String> {
         use rsa::pkcs1::EncodeRsaPrivateKey;
         
-        Ok(self.private_key.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)?)
+        self.private_key.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
+            .map(|zeroizing| zeroizing.as_str().to_string())
+            .map_err(|e| anyhow::anyhow!("Failed to encode private key: {:?}", e))
     }
 
     fn parse_private_key_pem(pem: &str) -> anyhow::Result<RsaPrivateKey> {

@@ -1,0 +1,20 @@
+#!/bin/bash
+set -e
+
+# Script pre-removal
+
+echo "License Secret Agent - Préparation suppression"
+
+# Arrêter le service si actif
+if systemctl is-active --quiet license-agent; then
+    systemctl stop license-agent
+    echo "Service license-agent arrêté"
+fi
+
+# Désactiver au démarrage
+if systemctl is-enabled --quiet license-agent; then
+    systemctl disable license-agent
+    echo "Service license-agent désactivé"
+fi
+
+exit 0

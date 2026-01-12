@@ -14,6 +14,7 @@ pub enum SecretState {
 }
 
 /// Métadonnées d'un secret
+/// Note: Les métadonnées ne contiennent pas de données sensibles, donc pas besoin de ZeroizeOnDrop
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretMetadata {
     pub version: u64,
@@ -37,10 +38,12 @@ pub enum RotationSource {
 }
 
 /// Secret avec métadonnées
+/// Note: Seul le champ `data` est zéroisé à la destruction, pas les métadonnées
 #[derive(ZeroizeOnDrop)]
 pub struct Secret {
     #[zeroize(on_drop)]
     pub data: Vec<u8>,
+    #[zeroize(skip)]
     pub metadata: SecretMetadata,
 }
 

@@ -1,0 +1,19 @@
+Package: license-secret-agent
+Version: 0.1.0
+Section: admin
+Priority: optional
+Architecture: amd64
+Depends: libssl3 (>= 3.0.0), libc6 (>= 2.31), systemd
+Recommends: tpm2-tss (>= 3.0.0)
+Maintainer: License Agent Team <admin@example.com>
+Description: License Secret Agent - Service de protection de licences applicatives
+ Service système sécurisé pour gérer le secret de déchiffrement des licences
+ applicatives avec support TPM 2.0, rotation automatique et mode dégradé.
+ .
+ Fonctionnalités :
+  - Stockage sécurisé des secrets dans TPM 2.0
+  - Rotation automatique sans coupure
+  - Mode dégradé pour fonctionnement offline
+  - Interface CLI de gestion
+  - Logs d'audit complets
+  - Métriques Prometheus

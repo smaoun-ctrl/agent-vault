@@ -14,13 +14,14 @@ tokio-stream = "0.1"
 # Cryptographie
 ring = "0.17"
 aes-gcm = "0.10"
-rsa = { version = "0.9", features = ["sha2", "oaep"] }
+rsa = { version = "0.9", features = ["sha2"] }
 sha2 = "0.10"
 hmac = "0.12"
 rand = "0.8"
 
-# TPM
-tss-esapi = "8.0"
+# TPM (optionnel, nécessite tpm2-tss installé)
+# Pour compiler sans TPM, commentez cette ligne
+tss-esapi = { version = "7.6", optional = true }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -60,8 +61,9 @@ clap = { version = "4.4", features = ["derive"] }
 prometheus = "0.13"
 
 # HTTP Server (pour API REST optionnelle)
-actix-web = { version = "4.4", features = ["rustls", "json"] }
-actix-rt = "2.9"
+# Note: API REST non implémentée, dépendances commentées pour éviter erreurs
+# actix-web = { version = "4.4", features = ["rustls"] }
+# actix-rt = "2.9"
 
 # Certificates
 rustls = "0.21"
@@ -69,6 +71,10 @@ rustls-pemfile = "1.0"
 
 # Rate limiting
 governor = "0.6"
+
+[features]
+default = []
+tpm = ["tss-esapi"]
 
 [dev-dependencies]
 tokio-test = "0.4"

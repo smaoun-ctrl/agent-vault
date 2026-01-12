@@ -76,7 +76,7 @@ impl IpcServer {
     }
 
     async fn handle_connection(
-        stream: UnixStream,
+        mut stream: UnixStream,
         validator: Arc<LicenseValidator>,
         allowed_uids: Vec<u32>,
     ) -> anyhow::Result<()> {
@@ -143,10 +143,10 @@ impl IpcServer {
     }
 
     fn get_peer_uid(stream: &UnixStream) -> anyhow::Result<u32> {
-        use nix::sys::socket::getsockopt;
+        use nix::sys::socket::{getsockopt, sockopt};
         
-        let fd = stream.as_raw_fd();
-        let creds: libc::ucred = getsockopt(fd, sockopt::PeerCredentials)?;
-        Ok(creds.uid as u32)
+        let creds = getsockopt(stream, sockopt::PeerCredentials)
+            .map_err(|e| anyhow::anyhow!("Failed to get peer credentials: {}", e))?;
+        Ok(creds.uid() as u32)
     }
 }

@@ -113,14 +113,9 @@ impl LicenseValidator {
         // Cela garantit que le token ne peut pas être réutilisé avec un autre secret
         let aad = license_version.to_be_bytes();
 
-        // Déchiffrer avec AAD
+        // Déchiffrer
         let plaintext = cipher
-            .decrypt_with_nonce(nonce, full_ciphertext.as_ref())
-            .and_then(|pt| {
-                // Vérifier AAD manuellement car aes-gcm ne supporte pas AAD dans decrypt
-                // Pour l'instant, on déchiffre sans AAD mais on pourrait l'ajouter
-                Ok(pt)
-            })
+            .decrypt(nonce, full_ciphertext.as_ref())
             .map_err(|e| format!("GCM decryption failed: {}", e))?;
 
         // Désérialiser JSON

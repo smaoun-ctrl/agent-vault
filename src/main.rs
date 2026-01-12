@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
 
     // Chargement configuration
     let config = Config::load()?;
-    info!("Configuration loaded from {}", config.config_path());
+    info!("Configuration loaded from {}", config.config_path().display());
 
     // Création moteur principal
     let engine = Arc::new(CoreEngine::new(config).await?);

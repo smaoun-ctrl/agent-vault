@@ -1,0 +1,48 @@
+#!/bin/bash
+set -e
+
+# Script post-installation
+
+echo "License Secret Agent - Configuration post-installation"
+
+# Créer utilisateur si nécessaire
+if ! id "license-agent" &>/dev/null; then
+    useradd -r -s /bin/false -d /var/lib/license-agent license-agent
+    echo "Utilisateur license-agent créé"
+fi
+
+# Créer répertoires
+mkdir -p /etc/license-agent
+mkdir -p /var/lib/license-agent
+mkdir -p /var/log/license-agent
+
+# Permissions
+chown -R license-agent:license-agent /var/lib/license-agent
+chown -R license-agent:license-agent /var/log/license-agent
+chmod 755 /etc/license-agent
+chmod 755 /var/lib/license-agent
+chmod 755 /var/log/license-agent
+
+# Si configuration n'existe pas, copier exemple
+if [ ! -f /etc/license-agent/config.toml ]; then
+    if [ -f /usr/share/license-agent/config.toml.example ]; then
+        cp /usr/share/license-agent/config.toml.example /etc/license-agent/config.toml
+        chmod 600 /etc/license-agent/config.toml
+        chown root:root /etc/license-agent/config.toml
+        echo "Configuration exemple installée dans /etc/license-agent/config.toml"
+        echo "ATTENTION: Modifiez la configuration avant de démarrer le service"
+    fi
+fi
+
+# Recharger systemd
+systemctl daemon-reload
+
+# Ne pas démarrer automatiquement (nécessite configuration)
+echo "Installation terminée."
+echo "Prochaines étapes:"
+echo "1. Modifier /etc/license-agent/config.toml"
+echo "2. Installer les certificats dans /etc/license-agent/"
+echo "3. Démarrer: systemctl start license-agent"
+echo "4. Activer au démarrage: systemctl enable license-agent"
+
+exit 0

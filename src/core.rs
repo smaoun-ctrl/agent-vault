@@ -151,6 +151,8 @@ impl CoreEngine {
         // Tâche de rotation périodique
         let secret_manager_clone = Arc::clone(&secret_manager);
         let degraded_mode_clone = Arc::clone(&degraded_mode);
+        let config_rotation = Arc::clone(&config);
+        let shutdown_rotation = Arc::clone(&shutdown);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Toutes les heures
 
@@ -166,14 +168,14 @@ impl CoreEngine {
                                     if !state.active {
                                         state.active = true;
                                         state.activated_at = Some(Utc::now());
-                                        let grace_period_days = config.degraded_mode.grace_period_days;
+                                        let grace_period_days = config_rotation.degraded_mode.grace_period_days;
                                         state.grace_period_end = Some(Utc::now() + chrono::Duration::days(grace_period_days as i64));
                                     }
                                 }
                             }
                         }
                     }
-                    _ = shutdown.notified() => {
+                    _ = shutdown_rotation.notified() => {
                         break;
                     }
                 }
@@ -181,6 +183,7 @@ impl CoreEngine {
         });
 
         // Tâche de nettoyage
+        let shutdown_cleanup = Arc::clone(&shutdown);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Toutes les heures
 
@@ -191,7 +194,7 @@ impl CoreEngine {
                             warn!("Cleanup failed: {}", e);
                         }
                     }
-                    _ = shutdown.notified() => {
+                    _ = shutdown_cleanup.notified() => {
                         break;
                     }
                 }
@@ -200,16 +203,20 @@ impl CoreEngine {
 
         // Tâche de vérification mode dégradé avec retry rotation
         let rotation_manager_retry = Arc::clone(&self.rotation_manager);
+        let audit_clone = Arc::clone(&audit);
+        let degraded_mode_retry = Arc::clone(&degraded_mode);
+        let config_retry = Arc::clone(&config);
+        let shutdown_retry = Arc::clone(&shutdown);
         tokio::spawn(async move {
             let retry_interval = tokio::time::Duration::from_secs(
-                config.degraded_mode.retry_interval_seconds
+                config_retry.degraded_mode.retry_interval_seconds
             );
             let mut interval = tokio::time::interval(retry_interval);
 
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
-                        let state = degraded_mode.read().await;
+                        let state = degraded_mode_retry.read().await;
                         if state.active {
                             // Vérifier expiration grace period
                             if let Some(grace_end) = state.grace_period_end {
@@ -225,11 +232,11 @@ impl CoreEngine {
                                     debug!("Rotation retry in degraded mode failed: {}", e);
                                 } else {
                                     // Rotation réussie, désactiver mode dégradé
-                                    let mut state = degraded_mode.write().await;
+                                    let mut state = degraded_mode_retry.write().await;
                                     state.active = false;
                                     state.activated_at = None;
                                     state.grace_period_end = None;
-                                    audit.info(
+                                    audit_clone.info(
                                         "degraded_mode_deactivated_auto",
                                         serde_json::json!({"reason": "rotation_successful"})
                                     ).await;
@@ -237,7 +244,7 @@ impl CoreEngine {
                             }
                         }
                     }
-                    _ = shutdown.notified() => {
+                    _ = shutdown_retry.notified() => {
                         break;
                     }
                 }
@@ -245,22 +252,26 @@ impl CoreEngine {
         });
 
         // Tâche d'alertes progressives mode dégradé
+        let degraded_mode_alerts = Arc::clone(&self.degraded_mode);
+        let config_alerts = Arc::clone(&self.config);
+        let audit_alerts = Arc::clone(&self.audit);
+        let shutdown_alerts = Arc::clone(&self.shutdown);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Toutes les heures
 
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
-                        let state = degraded_mode.read().await;
+                        let state = degraded_mode_alerts.read().await;
                         if state.active {
                             if let Some(activated_at) = state.activated_at {
                                 let duration = Utc::now().signed_duration_since(activated_at);
                                 let hours = duration.num_hours();
                                 
                                 // Alertes progressives selon seuils configurés
-                                for threshold in &config.degraded_mode.alert_thresholds_hours {
+                                for threshold in &config_alerts.degraded_mode.alert_thresholds_hours {
                                     if hours == *threshold as i64 {
-                                        audit.warning(
+                                        audit_alerts.warning(
                                             "degraded_mode_alert",
                                             serde_json::json!({
                                                 "duration_hours": hours,
@@ -272,7 +283,7 @@ impl CoreEngine {
                             }
                         }
                     }
-                    _ = shutdown.notified() => {
+                    _ = shutdown_alerts.notified() => {
                         break;
                     }
                 }
@@ -315,23 +326,22 @@ impl CoreEngine {
     pub async fn get_status(&self) -> AgentResult<SystemStatus> {
         let active_version = self.secret_manager.active_version();
         let active_secret = if let Some(version) = active_version {
-            if let Some(metadata) = self.secret_manager.get_metadata(version) {
-                Some(crate::types::SecretInfo {
+            self.secret_manager.get_metadata(version).map(|metadata| {
+                crate::types::SecretInfo {
                     version: metadata.version,
                     state: metadata.state,
                     valid_from: metadata.valid_from,
                     valid_until: metadata.valid_until,
                     grace_until: metadata.grace_until,
-                    remaining_seconds: metadata
-                        .valid_until
-                        .signed_duration_since(Utc::now())
-                        .num_seconds()
-                        .max(0) as i64
-                        .into(),
-                })
-            } else {
-                None
-            }
+                    remaining_seconds: Some(
+                        metadata
+                            .valid_until
+                            .signed_duration_since(Utc::now())
+                            .num_seconds()
+                            .max(0)
+                    ),
+                }
+            })
         } else {
             None
         };
@@ -377,16 +387,18 @@ impl CoreEngine {
             }),
         };
 
+        let next_rotation = active_secret.as_ref().and_then(|s| {
+            s.valid_until.signed_duration_since(Utc::now()).num_seconds().try_into().ok()
+                .map(|secs: i64| Utc::now() + chrono::Duration::seconds(secs))
+        });
+
         Ok(SystemStatus {
             active_secret,
             grace_secrets,
             tpm_status: self.tpm.get_status(),
             license_status: self.validator.get_stats().await,
             degraded_mode: degraded_mode_status,
-            next_rotation: active_secret.as_ref().and_then(|s| {
-                s.valid_until.signed_duration_since(Utc::now()).num_seconds().try_into().ok()
-                    .map(|secs: i64| Utc::now() + chrono::Duration::seconds(secs))
-            }),
+            next_rotation,
         })
     }
 }

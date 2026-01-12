@@ -45,10 +45,37 @@ cargo build --release
 
 ## Installation
 
+### Option 1 : Package .deb (Recommandé pour Debian/Ubuntu)
+
+```bash
+# Construire le package
+./scripts/build-package.sh 0.1.0 amd64
+
+# Installer
+sudo dpkg -i target/package/license-secret-agent_0.1.0_amd64.deb
+sudo apt-get install -f  # Installer dépendances si nécessaire
+```
+
+### Option 2 : Tarball (Distribution générique)
+
+```bash
+# Construire le tarball
+./scripts/build-tarball.sh 0.1.0 x86_64
+
+# Extraire et installer
+tar -xzf target/tarball/license-secret-agent-0.1.0-x86_64.tar.gz
+cd license-secret-agent-0.1.0-x86_64
+sudo ./scripts/install.sh
+```
+
+### Option 3 : Installation manuelle
+
 ```bash
 # Exécuter le script d'installation (nécessite root)
 sudo ./deploy/install.sh
 ```
+
+Voir [PACKAGING.md](PACKAGING.md) pour plus de détails sur la création de packages.
 
 ## Configuration
 

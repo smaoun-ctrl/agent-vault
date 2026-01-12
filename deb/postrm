@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e
+
+# Script post-removal
+
+echo "License Secret Agent - Nettoyage post-suppression"
+
+# Recharger systemd
+systemctl daemon-reload
+
+# Optionnel: Supprimer utilisateur (commenté pour sécurité)
+# if id "license-agent" &>/dev/null; then
+#     userdel license-agent
+#     echo "Utilisateur license-agent supprimé"
+# fi
+
+# Optionnel: Supprimer répertoires (commenté pour préserver données)
+# rm -rf /var/lib/license-agent
+# rm -rf /var/log/license-agent
+
+echo "Suppression terminée"
+echo "Note: Les fichiers de configuration et données sont conservés"
+echo "Pour suppression complète, supprimez manuellement:"
+echo "  - /etc/license-agent/"
+echo "  - /var/lib/license-agent/"
+echo "  - /var/log/license-agent/"
+
+exit 0
