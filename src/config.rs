@@ -101,9 +101,14 @@ impl Config {
     }
 
     fn validate(&self) -> Result<()> {
-        // Validation URLs
-        if !self.server.url.starts_with("https://") {
-            anyhow::bail!("Server URL must use HTTPS");
+        // Validation URLs - permettre HTTP pour les tests
+        if !self.server.url.starts_with("https://") && !self.server.url.starts_with("http://") {
+            anyhow::bail!("Server URL must use HTTP or HTTPS (format: http:// or https://)");
+        }
+        
+        // Avertissement pour HTTP (non sécurisé)
+        if self.server.url.starts_with("http://") {
+            tracing::warn!("⚠️  Using HTTP (not HTTPS) - This is insecure and should only be used for testing!");
         }
 
         // Validation chemins

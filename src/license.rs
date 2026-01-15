@@ -4,10 +4,10 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
-use zeroize::Zeroize;
+use base64::{engine::general_purpose, Engine as _};
+use tracing::{debug, info};
 
 /// Validateur de licences
 pub struct LicenseValidator {
@@ -24,7 +24,8 @@ impl LicenseValidator {
         debug!("Validating license token ({} bytes)", license_token.len());
 
         // 1. Décoder le token
-        let token_data = base64::decode(license_token)
+        let token_data = general_purpose::STANDARD
+            .decode(license_token)
             .map_err(|e| AgentError::LicenseValidationFailed(format!("Invalid base64: {}", e)))?;
 
         if token_data.len() < 13 {
@@ -111,7 +112,7 @@ impl LicenseValidator {
 
         // AAD (Additional Authenticated Data) : version du secret utilisée
         // Cela garantit que le token ne peut pas être réutilisé avec un autre secret
-        let aad = license_version.to_be_bytes();
+        let _aad = license_version.to_be_bytes();
 
         // Déchiffrer
         let plaintext = cipher

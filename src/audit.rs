@@ -1,7 +1,6 @@
 use crate::config::Config;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
@@ -27,7 +26,6 @@ pub enum AuditLevel {
 
 /// Logger d'audit
 pub struct AuditLogger {
-    log_path: PathBuf,
     file: Arc<Mutex<tokio::fs::File>>,
 }
 
@@ -50,7 +48,6 @@ impl AuditLogger {
         info!("Audit logger initialized: {}", log_path.display());
 
         Ok(Self {
-            log_path,
             file: Arc::new(Mutex::new(file)),
         })
     }

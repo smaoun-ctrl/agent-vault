@@ -1,9 +1,10 @@
 use crate::types::AgentError;
 use anyhow::Result;
+#[cfg(feature = "tpm")]
 use std::sync::Arc;
 #[cfg(feature = "tpm")]
 use tss_esapi::{Context, TctiNameConf};
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 /// Gestionnaire TPM
 pub struct TpmManager {
@@ -11,7 +12,6 @@ pub struct TpmManager {
     context: Option<Arc<Context>>,
     #[cfg(not(feature = "tpm"))]
     context: Option<()>,
-    enabled: bool,
 }
 
 impl TpmManager {
@@ -40,7 +40,7 @@ impl TpmManager {
             None
         };
 
-        Ok(Self { context, enabled })
+        Ok(Self { context })
     }
 
     #[cfg(feature = "tpm")]
@@ -57,6 +57,7 @@ impl TpmManager {
     }
 
     #[cfg(not(feature = "tpm"))]
+    #[allow(dead_code)]
     fn create_context() -> Result<()> {
         anyhow::bail!("TPM support not compiled (feature 'tpm' not enabled)");
     }
@@ -97,6 +98,7 @@ impl TpmManager {
     }
 
     #[cfg(not(feature = "tpm"))]
+    #[allow(dead_code)]
     fn encrypt_with_tpm(&self, _ctx: &(), _data: &[u8]) -> Result<Vec<u8>, AgentError> {
         self.encrypt_software(_data)
     }
@@ -108,6 +110,7 @@ impl TpmManager {
     }
 
     #[cfg(not(feature = "tpm"))]
+    #[allow(dead_code)]
     fn decrypt_with_tpm(&self, _ctx: &(), encrypted: &[u8]) -> Result<Vec<u8>, AgentError> {
         self.decrypt_software(encrypted)
     }
@@ -162,7 +165,6 @@ impl TpmManager {
     }
 
     fn get_fallback_key(&self) -> Result<aes_gcm::Key<aes_gcm::Aes256Gcm>, AgentError> {
-        use aes_gcm::{Aes256Gcm, KeyInit};
         use sha2::{Digest, Sha256};
 
         // Dérivation clé depuis fichier ou variable d'environnement

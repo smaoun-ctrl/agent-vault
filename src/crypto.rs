@@ -79,28 +79,36 @@ impl CryptoManager {
         use rsa::Pss;
         use rand::rngs::OsRng;
         
+        // Hasher les données
         let mut hasher = Sha256::new();
         hasher.update(data);
         let hash = hasher.finalize();
         
-        let padding = Pss::new_with_salt::<Sha256>(32); // 32 bytes salt
+        // Créer le padding PSS avec SHA-256 (salt length = hash length = 32 bytes)
+        let padding = Pss::new_with_salt::<Sha256>(32);
+        let mut rng = OsRng;
         
+        // Signer le hash avec RSA-PSS
+        // L'API attend: sign_with_rng(rng, padding, hash)
         self.private_key
-            .sign(padding, &hash)
+            .sign_with_rng(&mut rng, padding, &hash)
             .map_err(|e| AgentError::CryptoError(format!("RSA-PSS signing failed: {}", e)))
     }
 
     /// Vérifie une signature RSA-PSS
     pub fn verify_pss(&self, data: &[u8], signature: &[u8]) -> Result<bool, AgentError> {
         use rsa::Pss;
-        use rand::rngs::OsRng;
         
+        // Hasher les données
         let mut hasher = Sha256::new();
         hasher.update(data);
         let hash = hasher.finalize();
         
-        let padding = Pss::new_with_salt::<Sha256>(32); // 32 bytes salt
+        // Créer le padding PSS avec SHA-256 (salt length = hash length = 32 bytes)
+        let padding = Pss::new_with_salt::<Sha256>(32);
         
+        // Vérifier la signature
+        // L'API attend: verify(padding, hash, signature)
         match self.public_key.verify(padding, &hash, signature) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),

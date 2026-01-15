@@ -6,7 +6,7 @@ use crate::license::LicenseValidator;
 use crate::rotation::RotationManager;
 use crate::secret::SecretManager;
 use crate::tpm::TpmManager;
-use crate::types::{AgentError, AgentResult, DegradedModeStatus, SystemStatus};
+use crate::types::{AgentResult, DegradedModeStatus, SystemStatus};
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -20,7 +20,6 @@ pub struct CoreEngine {
     validator: Arc<LicenseValidator>,
     rotation_manager: Arc<RotationManager>,
     audit: Arc<AuditLogger>,
-    ipc_server: Option<Arc<IpcServer>>,
     degraded_mode: Arc<RwLock<DegradedModeState>>,
     shutdown: Arc<tokio::sync::Notify>,
 }
@@ -92,7 +91,6 @@ impl CoreEngine {
             validator,
             rotation_manager,
             audit,
-            ipc_server: None,
             degraded_mode,
             shutdown: Arc::new(tokio::sync::Notify::new()),
         })

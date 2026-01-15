@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
-use zeroize::Zeroize;
 
 /// Gestionnaire de secrets
 pub struct SecretManager {

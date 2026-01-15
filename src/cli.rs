@@ -1,5 +1,3 @@
-use crate::config::Config;
-use crate::types::{AgentError, SystemStatus};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;

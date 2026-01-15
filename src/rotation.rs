@@ -8,8 +8,8 @@ use rand::Rng;
 use reqwest::Client;
 use std::sync::Arc;
 use std::time::Duration;
+use base64::{engine::general_purpose, Engine as _};
 use tracing::{debug, error, info, warn};
-use zeroize::Zeroize;
 
 /// Gestionnaire de rotation
 pub struct RotationManager {
@@ -30,6 +30,7 @@ struct RotateSecretRequest {
     timestamp: DateTime<Utc>,
     nonce: String,
     signature: String, // TODO: Implémenter signature réelle
+    agent_public_key: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -157,7 +158,11 @@ impl RotationManager {
         
         // Signer avec RSA-PSS
         let signature_bytes = self.crypto.sign_pss(data_to_sign.as_bytes())?;
-        let signature = base64::encode(&signature_bytes);
+        let signature = general_purpose::STANDARD.encode(&signature_bytes);
+
+        let agent_public_key = self.crypto
+            .export_public_key_pem()
+            .map_err(|e| AgentError::CryptoError(format!("Failed to export public key: {}", e)))?;
         
         let request = RotateSecretRequest {
             agent_id: self.config.agent.id.clone(),
@@ -165,6 +170,7 @@ impl RotationManager {
             timestamp,
             nonce: hex::encode(&nonce),
             signature,
+            agent_public_key,
         };
 
         // 3. Envoyer requête au serveur
@@ -179,7 +185,8 @@ impl RotationManager {
         }
 
         // 5. Déchiffrer nouveau secret avec RSA-OAEP
-        let new_secret_encrypted = base64::decode(&response.new_secret_encrypted)
+        let new_secret_encrypted = general_purpose::STANDARD
+            .decode(&response.new_secret_encrypted)
             .map_err(|e| AgentError::CryptoError(format!("Failed to decode secret: {}", e)))?;
 
         // Déchiffrer avec clé privée agent (RSA-OAEP)

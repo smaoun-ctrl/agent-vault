@@ -1,24 +1,23 @@
 [server]
 url = "https://license-server.example.com"
-cert_pin = "sha256:CHANGE_THIS_TO_YOUR_SERVER_CERT_PIN"
-client_cert = "/etc/license-agent/client.pem"
-client_key = "/etc/license-agent/client.key"
+cert_pin = ""
+client_cert = "/etc/licence-agent/client.pem"
+client_key = "/etc/licence-agent/client.key"
 timeout_seconds = 30
 
 [agent]
 id = "pos-001"
-rotation_interval = 86400  # 24 heures en secondes
-grace_period = 604800      # 7 jours en secondes
-rotation_threshold_seconds = 3600  # 1 heure avant expiration
+rotation_interval = 86400
+grace_period = 604800
+rotation_threshold_seconds = 3600
 
 [tpm]
 enabled = true
 fallback_encrypted_storage = "/var/lib/license-agent/secret.enc"
 
 [management]
-allowed_uids = [1000, 1001]  # UIDs autorisés pour interface de gestion
+allowed_uids = [1000]
 ipc_socket_path = "/var/run/license-agent.sock"
-api_port = null  # null pour désactiver API REST
 rate_limit_requests_per_minute = 60
 
 [degraded_mode]

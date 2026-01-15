@@ -88,6 +88,9 @@ path = "src/main.rs"
 name = "license-agent-cli"
 path = "src/bin/license-agent-cli.rs"
 
+[workspace]
+members = ["examples/*"]
+
 [profile.release]
 opt-level = 3
 lto = true

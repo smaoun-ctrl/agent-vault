@@ -1,7 +1,5 @@
 use crate::license::LicenseValidator;
-use crate::types::{AgentError, AgentResult, ValidateLicenseRequest, ValidateLicenseResponse};
-use nix::sys::socket::sockopt;
-use std::os::unix::io::AsRawFd;
+use crate::types::{ValidateLicenseRequest, ValidateLicenseResponse};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
